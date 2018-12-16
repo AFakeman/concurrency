@@ -26,9 +26,7 @@ public:
   }
 public slots:
   void RaceDone() {
-    for (auto &thread : threads_) {
-      thread.wait();
-    }
+    threads_.front().wait();
     exit(0);
   }
 
