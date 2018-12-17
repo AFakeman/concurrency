@@ -1,3 +1,5 @@
+#pragma once
+
 #include <algorithm>
 #include <atomic>
 #include <unordered_set>
@@ -14,6 +16,9 @@ struct ThreadData {
   std::atomic<void*> hazard_pointers[kPointersPerThread];
   std::unordered_set<void*> delete_list;
 };
+
+template <class T>
+class HazardPointerController;
 
 template <class T>
 class HazardPointerController {
@@ -35,8 +40,10 @@ public:
    * a hazard pointer. As long as the pointer is marked as a hazard,
    * it will not be deleted. After using the pointer,
    * RemoveHazardLabel or DeleteHazardPointer must be called.
+   * Supports any atomic-like template class with const load() method.
    */
-  T* GetHazardPointer(const std::atomic<T*> &var, ThreadDataIterator &it) {
+  template <template<class> class Atomic>
+  T* GetHazardPointer(const Atomic<T*> &var, ThreadDataIterator it) {
     auto iter = std::find(std::begin(it->hazard_pointers),
                           std::end(it->hazard_pointers), nullptr);
     if (iter == std::end(it->hazard_pointers)) {
@@ -51,10 +58,20 @@ public:
     return ptr;
   }
 
+  T* GetHazardPointer(T *ptr, ThreadDataIterator it) {
+    auto iter = std::find(std::begin(it->hazard_pointers),
+                          std::end(it->hazard_pointers), nullptr);
+    if (iter == std::end(it->hazard_pointers)) {
+      throw std::runtime_error("Hit hazard point limit");
+    };
+    *iter = ptr;
+    return ptr;
+  }
+
   /**
    * Unhazards the pointer, signifying that it is no longer used by this thread.
    */
-  void RemoveHazardLabel(T* ptr, ThreadDataIterator &it) {
+  void RemoveHazardLabel(T* ptr, ThreadDataIterator it) {
     auto iter = std::find(std::begin(it->hazard_pointers),
                           std::end(it->hazard_pointers), ptr);
     if (iter == std::end(it->hazard_pointers)) {
@@ -68,7 +85,7 @@ public:
    * Marks the hazard pointer for deletion. This should be called after
    * replacing the atomic variable value.
    */
-  void DeleteHazardPointer(T* ptr, ThreadDataIterator &it) {
+  void DeleteHazardPointer(T* ptr, ThreadDataIterator it) {
     RemoveHazardLabel(ptr, it);
     it->delete_list.insert(ptr);
     if (it->delete_list.size() == ThreadData::kDeleteListCapacity) {
@@ -91,6 +108,66 @@ public:
       delete ptr;
     }
   }
+
+  /**
+   * RAII guard for hazard pointers. Should be used within a single thread.
+   */
+  class HazardPointer {
+  public:
+    HazardPointer() = default;
+    // A constructor for pseudo hazard pointers.
+    HazardPointer(T* ptr) : ptr_(ptr) {};
+    template <template <class> class Atomic>
+    HazardPointer(Atomic<T> &val, HazardPointerController<T> &ctrl,
+                  const ThreadDataIterator &it)
+        : ptr_(ctrl.GetHazardPointer(val, it)), ctrl_(&ctrl), it_(it) {}
+    HazardPointer(const HazardPointer &cp) = delete;
+    HazardPointer(HazardPointer &&mv) : ptr_(mv.ptr_), ctrl_(mv.ctrl_) {
+      mv.ptr_ = nullptr;
+      mv.ctrl_ = nullptr;
+    }
+
+    HazardPointer &operator=(HazardPointer &&rhs) {
+      Reset();
+      ptr_ = rhs.ptr_;
+      ctrl_ = rhs.ctrl_;
+      rhs.ptr_ = nullptr;
+      rhs.ctrl_ = nullptr;
+    }
+
+    void Reset() {
+      if (ctrl_ && ptr_) {
+        ctrl_->RemoveHazardLabel(ptr_, it_);
+      }
+    }
+
+    void Delete() {
+      ctrl_->DeleteHazardPointer(ptr_, it_);
+      ptr_ = nullptr;
+      ctrl_ = nullptr;
+    }
+
+    T *get() {
+      return ptr_;
+    }
+
+    T *operator->() {
+      return ptr_;
+    }
+
+    T &operator*() {
+      return *ptr_;
+    };
+
+    ~HazardPointer() {
+      Reset();
+    }
+  private:
+    T *ptr_{nullptr};
+    HazardPointerController *ctrl_{nullptr};
+    ThreadDataIterator it_;
+  };
+
 private:
   /**
    * Deletes pointers marked for deletion by this thread.
@@ -117,4 +194,11 @@ private:
 
   NoPopLinkedList<ThreadData> thread_list_;
 };
+
+template<class T>
+using HazardPointer = typename HazardPointerController<T>::HazardPointer;
+
+template <class T>
+using ThreadDataIterator =
+    typename HazardPointerController<T>::ThreadDataIterator;
 } // namespace parprog
