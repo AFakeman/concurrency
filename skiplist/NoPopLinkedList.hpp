@@ -69,8 +69,11 @@ public:
     ListNode *new_node = new ListNode{head_.load(), value};
     while (!head_.compare_exchange_strong(new_node->next, new_node))
       ;
+    size_++;
     return {new_node};
   }
+
+  size_t size() const { return size_; }
 
   using iterator = Iterator;
   iterator begin() { return {head_}; }
@@ -78,5 +81,6 @@ public:
 
 private:
   std::atomic<ListNode *> head_{nullptr};
+  std::atomic<size_t> size_{0};
 };
 } // namespace parprog
