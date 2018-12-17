@@ -7,9 +7,8 @@
 #include "LockFreeList.hpp"
 
 void test_list_thread_task(
-    typename parprog::LockFreeList<int>::HazardControllerType *ctrl,
     parprog::LockFreeList<int> *list, int threadno, size_t thread_count) {
-  auto it = ctrl->InitializeThread();
+  auto it = list->InitializeThread();
   const size_t kElementsToInsert = 1024;
   std::vector<int> to_insert;
   std::random_device rd;
@@ -17,41 +16,40 @@ void test_list_thread_task(
   for (size_t i = 0; i < kElementsToInsert; ++i) {
     int num = g() * thread_count + threadno;
     to_insert.push_back(num);
-    list->Insert(num, it, *ctrl);
+    list->Insert(num, it);
   }
 
   std::shuffle(to_insert.begin(), to_insert.end(), g);
 
   for (auto i : to_insert) {
-    assert(list->Contains(i, it, *ctrl));
+    assert(list->Contains(i, it));
   }
 
   std::shuffle(to_insert.begin(), to_insert.end(), g);
 
   for (auto i : to_insert) {
-    assert(list->Remove(i, it, *ctrl));
+    assert(list->Remove(i, it));
   }
 
   std::shuffle(to_insert.begin(), to_insert.end(), g);
 
   for (auto i : to_insert) {
-    assert(!list->Contains(i, it, *ctrl));
+    assert(!list->Contains(i, it));
   }
 }
 
 void test_list_single_thread() {
   parprog::LockFreeList<int> lst;
   decltype(lst)::HazardControllerType ctrl;
-  test_list_thread_task(&ctrl, &lst, 0, 1);
+  test_list_thread_task(&lst, 0, 1);
 }
 
 void test_list() {
   const size_t kNumThreads = 8;
   parprog::LockFreeList<int> lst;
-  decltype(lst)::HazardControllerType ctrl;
   std::vector<std::thread> runner_threads;
   for (size_t i = 0; i < kNumThreads; ++i) {
-    runner_threads.emplace_back(test_list_thread_task, &ctrl, &lst, (int)i,
+    runner_threads.emplace_back(test_list_thread_task, &lst, (int)i,
                                 kNumThreads);
   }
 
