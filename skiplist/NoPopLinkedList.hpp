@@ -11,9 +11,10 @@ namespace parprog {
 template <class T> class NoPopLinkedList {
 public:
   struct ListNode {
-    std::atomic<ListNode *> next;
+    ListNode *next;
     T value;
   };
+
   NoPopLinkedList() = default;
 
   // Destructor should be called when it is guranteed that nobody is going
@@ -21,7 +22,7 @@ public:
   ~NoPopLinkedList() {
     while (head_ != nullptr) {
       ListNode *to_delete = head_;
-      head_ = head_->next;
+      head_ = head_.load()->next;
       delete to_delete;
     }
   }

@@ -4,7 +4,9 @@
 #include <cassert>
 
 namespace parprog {
-template <typename T> class AtomicMarkedPointer {
+template <typename T> class AtomicMarkedPointer;
+
+template <typename T> class AtomicMarkedPointer<T*> {
 public:
   struct MarkedPointer {
     MarkedPointer(T *ptr, bool marked) : ptr_(ptr), marked_(marked) {}
@@ -41,7 +43,7 @@ public:
   bool TryMark(T *ptr) { return CompareAndSet({ptr, false}, {ptr, true}); }
 
   bool Marked() const {
-    const auto curr_ptr = Load();
+    const auto curr_ptr = LoadMarked();
     return curr_ptr.marked_;
   }
 
